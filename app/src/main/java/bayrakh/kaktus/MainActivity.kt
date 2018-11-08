@@ -1,5 +1,8 @@
 package bayrakh.kaktus
 
+import android.arch.lifecycle.LiveData
+import android.arch.lifecycle.Observer
+import android.arch.persistence.room.*
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.os.Bundle
@@ -30,11 +33,11 @@ class MainActivity : AppCompatActivity() {
 
         budgetChangeList.layoutManager = LinearLayoutManager(this)
         budgetChangeList.adapter = BudgetChangeAdapter(init)
-        val db = Database.getInstance(this)
-        db.getChanges()
-                .subscribe { list ->
-                    budgetChangeList.adapter = BudgetChangeAdapter(init + list)
-                }
+        val db = BudgetChangeDatabase.getInstance(this).getChangesDao()
+        db.getChanges().observe(this, Observer { list ->
+            if (list != null)
+                budgetChangeList.adapter = BudgetChangeAdapter(init + list)
+        })
 
         fab.setOnClickListener {
             val count = budgetChangeList.adapter.itemCount
@@ -58,11 +61,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Entity(tableName = "changes")
     data class BudgetChange(
+            @PrimaryKey
             var id: Long? = null,
             val title: String,
             val text: String
     )
+
+    @Dao
+    interface BudgetChangesDao {
+        @Query("SELECT * FROM changes")
+        fun getChanges(): LiveData<List<BudgetChange>>
+
+        @Insert
+        fun addChange(change: BudgetChange)
+    }
+
+    @android.arch.persistence.room.Database(entities = [BudgetChange::class], version = 1)
+    abstract class BudgetChangeDatabase : RoomDatabase() {
+        abstract fun getChangesDao(): BudgetChangesDao
+
+        companion object {
+            var instance: BudgetChangeDatabase? = null
+
+            fun getInstance(ctx: Context): BudgetChangeDatabase = synchronized(BudgetChangeDatabase::class) {
+                var inst = instance
+                if (inst == null) {
+                    inst = Room.databaseBuilder(
+                            ctx.applicationContext,
+                            BudgetChangeDatabase::class.java,
+                            "my-db"
+                    ).build()
+                    instance = inst
+                }
+                inst
+            }
+        }
+    }
 
     class Database(ctx: Context) : ManagedSQLiteOpenHelper(ctx, "my-db", null, 1) {
         companion object {
